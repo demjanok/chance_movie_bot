@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def format_movie_caption(movie: dict) -> str:
-    """Форматує картку фільму з урахуванням ліміту символів Telegram (1024)."""
+    """Formats the movie details card, ensuring it stays within Telegram's 1024-character caption limit."""
     title = html.escape(movie.get("title") or "Без назви")
     orig_title = html.escape(movie.get("original_title") or "")
     release_date = movie.get("release_date") or ""
@@ -20,11 +20,11 @@ def format_movie_caption(movie: dict) -> str:
     rating = movie.get("vote_average", 0.0)
     vote_count = movie.get("vote_count", 0)
 
-    # Жанри
+    # Genres
     genres_list = [g.get("name", "") for g in movie.get("genres", []) if g.get("name")]
     genres_str = html.escape(", ".join(genres_list)) if genres_list else "Не вказано"
 
-    # Тривалість
+    # Runtime
     runtime = movie.get("runtime")
     runtime_str = f"⏱ <b>Тривалість:</b> {runtime} хв.\n" if runtime else ""
 
@@ -42,7 +42,7 @@ def format_movie_caption(movie: dict) -> str:
     overview = movie.get("overview") or "Опис відсутній."
     overview = html.escape(overview.strip())
 
-    # Telegram caption limit is 1024 characters
+    # Telegram caption limit is 1024 characters; truncate if needed
     max_overview_len = 1000 - len(header) - len(info)
     if len(overview) > max_overview_len:
         overview = overview[:max_overview_len - 3] + "..."
@@ -51,12 +51,12 @@ def format_movie_caption(movie: dict) -> str:
 
 
 async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обробляє вибір жанру або запит «Інший фільм»."""
+    """Handles genre selection and 'Another movie' button clicks."""
     query = update.callback_query
     await query.answer(text="🔍 Підбираю фільм...")
 
     data = query.data
-    # Очікуваний формат: "genre:<id>" або "next:<id>"
+    # Expected format: "genre:<id>" or "next:<id>"
     if ":" in data:
         _, genre_id = data.split(":", 1)
     else:
@@ -64,7 +64,7 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     chat_id = query.message.chat_id
 
-    # Показуємо статус "завантаження фото" в чаті
+    # Display photo upload action in chat while fetching
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
 
     movie = await tmdb_service.get_random_movie(genre_id=genre_id)
@@ -104,9 +104,9 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             )
             return
         except Exception as e:
-            logger.warning(f"Не вдалося відправити постер {poster_url}: {e}")
+            logger.warning(f"Failed to send poster photo {poster_url}: {e}")
 
-    # Fallback: якщо постера немає або сталася помилка
+    # Fallback: if poster is missing or failed to upload
     await query.message.reply_text(
         text=caption,
         parse_mode="HTML",
@@ -115,7 +115,7 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def menu_genres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Повернення до вибору жанрів."""
+    """Returns to the genre selection menu."""
     query = update.callback_query
     await query.answer()
     await query.message.reply_text(

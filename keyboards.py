@@ -5,7 +5,7 @@ from services.tmdb_service import POPULAR_GENRES
 
 
 def get_genres_keyboard() -> InlineKeyboardMarkup:
-    """Генерує сітку кнопок з вибором жанрів."""
+    """Generates an inline keyboard grid with genre selection buttons."""
     keyboard = []
     row = []
 
@@ -20,14 +20,14 @@ def get_genres_keyboard() -> InlineKeyboardMarkup:
     if row:
         keyboard.append(row)
 
-    # Кнопка для випадкового жанру на всю ширину
+    # Full-width button for random/any genre
     keyboard.append([InlineKeyboardButton(text="🎲 Будь-який жанр", callback_data="genre:any")])
 
     return InlineKeyboardMarkup(keyboard)
 
 
 def get_movie_actions_keyboard(genre_id: str, trailer_url: Optional[str] = None) -> InlineKeyboardMarkup:
-    """Генерує кнопки дій під карткою фільму."""
+    """Generates action buttons displayed below a movie recommendation card."""
     action_row = [
         InlineKeyboardButton(text="🔄 Інший фільм", callback_data=f"next:{genre_id}")
     ]

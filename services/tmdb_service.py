@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 
-# Список популярних жанрів для меню бота
+# List of popular genres displayed in the Telegram bot menu
 POPULAR_GENRES = {
     "35": "🎭 Комедія",
     "28": "🍿 Бойовик",
@@ -32,7 +32,9 @@ class TMDBService:
         self.api_key = api_key
 
     def _get_auth_params_and_headers(self) -> tuple[dict, dict]:
-        """Підтримує як звичайний API Key (v3), так і Read Access Token (v4)."""
+        """
+        Supports both traditional API Key (v3) and Read Access Token (v4 Bearer JWT).
+        """
         headers = {}
         params = {}
         if self.api_key.startswith("eyJ") or len(self.api_key) > 40:
@@ -48,10 +50,10 @@ class TMDBService:
         min_votes: int = config.MIN_VOTES,
     ) -> Optional[Dict[str, Any]]:
         """
-        Знаходить випадковий якісний фільм за обраним жанром та рейтингом.
+        Fetches a random quality movie filtered by genre and rating.
         """
         if not self.api_key:
-            logger.error("TMDB_API_KEY не налаштовано!")
+            logger.error("TMDB_API_KEY is not configured!")
             return None
 
         auth_params, headers = self._get_auth_params_and_headers()
@@ -71,7 +73,7 @@ class TMDBService:
                 params["with_genres"] = genre_id
 
             try:
-                # 1. Перший запит, щоб дізнатися загальну кількість сторінок
+                # 1. Initial request to determine total available pages
                 response = await client.get(f"{TMDB_BASE_URL}/discover/movie", params=params)
                 response.raise_for_status()
                 data = response.json()
@@ -80,11 +82,11 @@ class TMDBService:
                 if total_pages == 0 or not data.get("results"):
                     return None
 
-                # Обмежуємося першими 15 сторінками найпопулярніших фільмів
-                max_page = min(total_pages, 15)
+                # Limit discovery to the top configured pages (default: 15 pages = 300 movies pool)
+                max_page = min(total_pages, config.MAX_DISCOVERY_PAGES)
                 random_page = random.randint(1, max_page)
 
-                # 2. Якщо обрана сторінка не 1, робимо запит за нею
+                # 2. If the selected random page is not page 1, fetch that page
                 if random_page != 1:
                     params["page"] = random_page
                     response = await client.get(f"{TMDB_BASE_URL}/discover/movie", params=params)
@@ -98,15 +100,17 @@ class TMDBService:
                 chosen_movie = random.choice(results)
                 movie_id = chosen_movie["id"]
 
-                # 3. Запитуємо повні деталі фільму (включно з трейлерами)
+                # 3. Retrieve detailed movie metadata (runtime, videos/trailers, description)
                 return await self.get_movie_details(client, movie_id)
 
             except httpx.HTTPError as e:
-                logger.error(f"Помилка при запиті до TMDB: {e}")
+                logger.error(f"Error querying TMDB discover API: {e}")
                 return None
 
     async def get_movie_details(self, client: httpx.AsyncClient, movie_id: int) -> Optional[Dict[str, Any]]:
-        """Отримує розширену інформацію про фільм (тривалість, трейлер, опис)."""
+        """
+        Retrieves detailed information for a movie (runtime, trailer, overview).
+        """
         auth_params, _ = self._get_auth_params_and_headers()
         params = {
             **auth_params,
@@ -118,7 +122,7 @@ class TMDBService:
             response.raise_for_status()
             data = response.json()
 
-            # Якщо опис українською відсутній, спробуємо отримати опис англійською
+            # If Ukrainian overview is empty, fall back to English overview
             if not data.get("overview"):
                 eng_params = {**auth_params, "language": "en-US"}
                 eng_resp = await client.get(
@@ -129,7 +133,7 @@ class TMDBService:
                     eng_data = eng_resp.json()
                     data["overview"] = eng_data.get("overview", "Опис наразі відсутній.")
 
-            # Шукаємо трейлер на YouTube
+            # Search for YouTube trailer
             trailer_url = None
             videos = data.get("videos", {}).get("results", [])
             for v in videos:
@@ -146,7 +150,7 @@ class TMDBService:
             return data
 
         except httpx.HTTPError as e:
-            logger.error(f"Помилка отримання деталей фільму {movie_id}: {e}")
+            logger.error(f"Error fetching details for movie {movie_id}: {e}")
             return None
 
 
