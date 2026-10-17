@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 
+import config
 from services.tmdb_service import tmdb_service
 from keyboards import get_movie_actions_keyboard, get_genres_keyboard
 
@@ -67,7 +68,11 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     # Display photo upload action in chat while fetching
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
 
-    movie = await tmdb_service.get_random_movie(genre_id=genre_id)
+    # Retrieve recently seen movie IDs for this user session to avoid duplicates
+    seen_movies = context.user_data.setdefault("seen_movies", [])
+    exclude_ids = set(seen_movies)
+
+    movie = await tmdb_service.get_random_movie(genre_id=genre_id, exclude_ids=exclude_ids)
 
     if not movie:
         if not tmdb_service.api_key:
@@ -86,6 +91,13 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode="HTML",
         )
         return
+
+    # Record the shown movie ID in the user's recent buffer
+    movie_id = movie.get("id")
+    if movie_id:
+        seen_movies.append(movie_id)
+        if len(seen_movies) > config.SEEN_MOVIES_BUFFER_SIZE:
+            seen_movies.pop(0)
 
     caption = format_movie_caption(movie)
     keyboard = get_movie_actions_keyboard(

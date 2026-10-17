@@ -46,15 +46,20 @@ class TMDBService:
     async def get_random_movie(
         self,
         genre_id: Optional[str] = None,
+        exclude_ids: Optional[set[int]] = None,
         min_rating: float = config.MIN_RATING,
         min_votes: int = config.MIN_VOTES,
     ) -> Optional[Dict[str, Any]]:
         """
-        Fetches a random quality movie filtered by genre and rating.
+        Fetches a random quality movie filtered by genre and rating,
+        avoiding movies listed in exclude_ids when possible.
         """
         if not self.api_key:
             logger.error("TMDB_API_KEY is not configured!")
             return None
+
+        if exclude_ids is None:
+            exclude_ids = set()
 
         auth_params, headers = self._get_auth_params_and_headers()
 
@@ -79,25 +84,35 @@ class TMDBService:
                 data = response.json()
 
                 total_pages = data.get("total_pages", 0)
-                if total_pages == 0 or not data.get("results"):
+                initial_results = data.get("results", [])
+                if total_pages == 0 or not initial_results:
                     return None
 
-                # Limit discovery to the top configured pages (default: 15 pages = 300 movies pool)
+                # Limit discovery to top configured pages (e.g. 15 pages = 300 movies pool)
                 max_page = min(total_pages, config.MAX_DISCOVERY_PAGES)
-                random_page = random.randint(1, max_page)
+                pages_to_try = random.sample(range(1, max_page + 1), k=min(3, max_page))
 
-                # 2. If the selected random page is not page 1, fetch that page
-                if random_page != 1:
-                    params["page"] = random_page
-                    response = await client.get(f"{TMDB_BASE_URL}/discover/movie", params=params)
-                    response.raise_for_status()
-                    data = response.json()
+                chosen_movie = None
 
-                results = data.get("results", [])
-                if not results:
-                    return None
+                for page_num in pages_to_try:
+                    if page_num == 1:
+                        page_results = initial_results
+                    else:
+                        params["page"] = page_num
+                        page_resp = await client.get(f"{TMDB_BASE_URL}/discover/movie", params=params)
+                        page_resp.raise_for_status()
+                        page_results = page_resp.json().get("results", [])
 
-                chosen_movie = random.choice(results)
+                    # Filter out already seen movies
+                    unseen = [m for m in page_results if m.get("id") not in exclude_ids]
+                    if unseen:
+                        chosen_movie = random.choice(unseen)
+                        break
+
+                # Fallback: if all sampled movies were already seen, pick any movie from initial results
+                if not chosen_movie:
+                    chosen_movie = random.choice(initial_results)
+
                 movie_id = chosen_movie["id"]
 
                 # 3. Retrieve detailed movie metadata (runtime, videos/trailers, description)

@@ -26,3 +26,7 @@ TMDB_LANGUAGE = "uk-UA"
 # - Higher values increase randomness/variety, but deeper pages may feature older
 #   or less globally popular titles (they still meet MIN_RATING and MIN_VOTES).
 MAX_DISCOVERY_PAGES = int(os.getenv("MAX_DISCOVERY_PAGES", "15"))
+
+# Number of recently shown movie IDs to track per user session to avoid duplicates.
+# A rolling buffer prevents showing recently suggested movies in a row.
+SEEN_MOVIES_BUFFER_SIZE = int(os.getenv("SEEN_MOVIES_BUFFER_SIZE", "50"))
