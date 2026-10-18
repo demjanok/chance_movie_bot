@@ -1,7 +1,7 @@
 from typing import Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from services.tmdb_service import POPULAR_GENRES
+from services.tmdb_service import POPULAR_GENRES, ANY_GENRE
 
 
 def get_genres_keyboard() -> InlineKeyboardMarkup:
@@ -10,7 +10,7 @@ def get_genres_keyboard() -> InlineKeyboardMarkup:
     row = []
 
     for genre_id, title in POPULAR_GENRES.items():
-        if genre_id == "any":
+        if genre_id == ANY_GENRE:
             continue
         row.append(InlineKeyboardButton(text=title, callback_data=f"genre:{genre_id}"))
         if len(row) == 2:
@@ -21,7 +21,7 @@ def get_genres_keyboard() -> InlineKeyboardMarkup:
         keyboard.append(row)
 
     # Full-width button for random/any genre
-    keyboard.append([InlineKeyboardButton(text="🎲 Будь-який жанр", callback_data="genre:any")])
+    keyboard.append([InlineKeyboardButton(text="🎲 Будь-який жанр", callback_data=f"genre:{ANY_GENRE}")])
 
     return InlineKeyboardMarkup(keyboard)
 

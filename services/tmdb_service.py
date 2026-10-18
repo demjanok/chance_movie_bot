@@ -1,5 +1,7 @@
+import asyncio
 import random
 import logging
+import time
 from typing import Optional, Dict, Any
 import httpx
 
@@ -9,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
+
+# Sentinel value for "any genre" selection
+ANY_GENRE = "any"
 
 # List of popular genres displayed in the Telegram bot menu
 POPULAR_GENRES = {
@@ -23,13 +28,20 @@ POPULAR_GENRES = {
     "10749": "💖 Мелодрама",
     "14": "🧙 Фентезі",
     "80": "🚓 Кримінал",
-    "any": "🎲 Будь-який жанр",
+    ANY_GENRE: "🎲 Будь-який жанр",
 }
+
+# TTL (seconds) for caching discover page results in memory
+_DISCOVER_CACHE_TTL = 1200  # 20 minutes
 
 
 class TMDBService:
     def __init__(self, api_key: str):
         self.api_key = api_key
+        # Persistent HTTP client — reuses TCP connections across requests
+        self._client: Optional[httpx.AsyncClient] = None
+        # In-memory cache: { cache_key: (results_list, timestamp) }
+        self._discover_cache: Dict[str, tuple[list, float]] = {}
 
     def _get_auth_params_and_headers(self) -> tuple[dict, dict]:
         """
@@ -42,6 +54,53 @@ class TMDBService:
         else:
             params["api_key"] = self.api_key
         return params, headers
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Returns the shared persistent AsyncClient, creating it if needed."""
+        if self._client is None or self._client.is_closed:
+            _, headers = self._get_auth_params_and_headers()
+            self._client = httpx.AsyncClient(headers=headers, timeout=10.0)
+        return self._client
+
+    async def close(self) -> None:
+        """Gracefully closes the underlying HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+
+    def _get_cached_page(self, cache_key: str) -> Optional[list]:
+        """Returns cached discover results if still within TTL, otherwise None."""
+        entry = self._discover_cache.get(cache_key)
+        if entry and (time.monotonic() - entry[1]) < _DISCOVER_CACHE_TTL:
+            return entry[0]
+        return None
+
+    def _set_cached_page(self, cache_key: str, results: list) -> None:
+        """Stores discover results in the in-memory cache."""
+        self._discover_cache[cache_key] = (results, time.monotonic())
+
+    async def _fetch_discover_page(
+        self,
+        client: httpx.AsyncClient,
+        base_params: dict,
+        page: int,
+    ) -> list:
+        """
+        Fetches a single discover page, using the in-memory cache when available.
+        """
+        genre_id = base_params.get("with_genres", ANY_GENRE)
+        cache_key = f"{genre_id}:{page}"
+
+        cached = self._get_cached_page(cache_key)
+        if cached is not None:
+            logger.debug("Cache hit for discover page %s (genre=%s)", page, genre_id)
+            return cached
+
+        params = {**base_params, "page": page}
+        response = await client.get(f"{TMDB_BASE_URL}/discover/movie", params=params)
+        response.raise_for_status()
+        results = response.json().get("results", [])
+        self._set_cached_page(cache_key, results)
+        return results
 
     async def get_random_movie(
         self,
@@ -61,92 +120,129 @@ class TMDBService:
         if exclude_ids is None:
             exclude_ids = set()
 
-        auth_params, headers = self._get_auth_params_and_headers()
+        auth_params, _ = self._get_auth_params_and_headers()
 
-        async with httpx.AsyncClient(headers=headers, timeout=10.0) as client:
-            params = {
-                **auth_params,
-                "language": config.TMDB_LANGUAGE,
-                "sort_by": "popularity.desc",
-                "vote_average.gte": min_rating,
-                "vote_count.gte": min_votes,
-                "include_adult": "false",
-                "page": 1,
-            }
+        base_params: dict = {
+            **auth_params,
+            "language": config.TMDB_LANGUAGE,
+            "sort_by": "popularity.desc",
+            "vote_average.gte": min_rating,
+            "vote_count.gte": min_votes,
+            "include_adult": "false",
+        }
 
-            if genre_id and genre_id != "any":
-                params["with_genres"] = genre_id
+        if genre_id and genre_id != ANY_GENRE:
+            base_params["with_genres"] = genre_id
 
-            try:
-                # 1. Initial request to determine total available pages
-                response = await client.get(f"{TMDB_BASE_URL}/discover/movie", params=params)
-                response.raise_for_status()
-                data = response.json()
+        client = await self._get_client()
 
-                total_pages = data.get("total_pages", 0)
-                initial_results = data.get("results", [])
-                if total_pages == 0 or not initial_results:
-                    return None
+        try:
+            # 1. Fetch page 1 to determine total available pages (may come from cache)
+            first_page_results = await self._fetch_discover_page(client, base_params, page=1)
 
-                # Limit discovery to top configured pages (e.g. 15 pages = 300 movies pool)
-                max_page = min(total_pages, config.MAX_DISCOVERY_PAGES)
-                pages_to_try = random.sample(range(1, max_page + 1), k=min(3, max_page))
+            # Peek at total_pages via a fresh request only if page 1 wasn't cached
+            genre_key = base_params.get("with_genres", ANY_GENRE)
+            cache_key_p1 = f"{genre_key}:1"
+            cached_entry = self._discover_cache.get(cache_key_p1)
+            # We need total_pages — re-fetch page 1 metadata if not already stored
+            total_pages = await self._get_total_pages(client, base_params)
 
-                chosen_movie = None
-
-                for page_num in pages_to_try:
-                    if page_num == 1:
-                        page_results = initial_results
-                    else:
-                        params["page"] = page_num
-                        page_resp = await client.get(f"{TMDB_BASE_URL}/discover/movie", params=params)
-                        page_resp.raise_for_status()
-                        page_results = page_resp.json().get("results", [])
-
-                    # Filter out already seen movies
-                    unseen = [m for m in page_results if m.get("id") not in exclude_ids]
-                    if unseen:
-                        chosen_movie = random.choice(unseen)
-                        break
-
-                # Fallback: if all sampled movies were already seen, pick any movie from initial results
-                if not chosen_movie:
-                    chosen_movie = random.choice(initial_results)
-
-                movie_id = chosen_movie["id"]
-
-                # 3. Retrieve detailed movie metadata (runtime, videos/trailers, description)
-                return await self.get_movie_details(client, movie_id)
-
-            except httpx.HTTPError as e:
-                logger.error(f"Error querying TMDB discover API: {e}")
+            if total_pages == 0 or not first_page_results:
                 return None
+
+            # Limit discovery pool to configured maximum
+            max_page = min(total_pages, config.MAX_DISCOVERY_PAGES)
+            pages_to_try = random.sample(range(1, max_page + 1), k=min(3, max_page))
+
+            # 2. Fetch all selected pages concurrently
+            page_results_list: list[list] = await asyncio.gather(
+                *[self._fetch_discover_page(client, base_params, p) for p in pages_to_try]
+            )
+
+            chosen_movie = None
+            for page_results in page_results_list:
+                unseen = [m for m in page_results if m.get("id") not in exclude_ids]
+                if unseen:
+                    chosen_movie = random.choice(unseen)
+                    break
+
+            # Fallback: all sampled movies already seen — pick any from the first page
+            if not chosen_movie:
+                if not first_page_results:
+                    return None
+                chosen_movie = random.choice(first_page_results)
+
+            movie_id = chosen_movie["id"]
+
+            # 3. Retrieve detailed movie metadata (runtime, videos/trailers, description)
+            return await self.get_movie_details(client, movie_id)
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error querying TMDB discover API: {e}")
+            return None
+
+    async def _get_total_pages(self, client: httpx.AsyncClient, base_params: dict) -> int:
+        """
+        Returns total_pages for a discover query.
+        Uses a cached response for page 1 if available, otherwise fetches it.
+        """
+        genre_id = base_params.get("with_genres", ANY_GENRE)
+        cache_key = f"{genre_id}:meta"
+        cached = self._discover_cache.get(cache_key)
+        if cached and (time.monotonic() - cached[1]) < _DISCOVER_CACHE_TTL:
+            return cached[0]  # type: ignore[return-value]
+
+        params = {**base_params, "page": 1}
+        response = await client.get(f"{TMDB_BASE_URL}/discover/movie", params=params)
+        response.raise_for_status()
+        data = response.json()
+        total_pages = data.get("total_pages", 0)
+
+        # Also cache page 1 results while we're at it
+        p1_key = f"{genre_id}:1"
+        if p1_key not in self._discover_cache:
+            self._set_cached_page(p1_key, data.get("results", []))
+
+        # Cache total_pages separately
+        self._discover_cache[cache_key] = (total_pages, time.monotonic())
+        return total_pages
 
     async def get_movie_details(self, client: httpx.AsyncClient, movie_id: int) -> Optional[Dict[str, Any]]:
         """
         Retrieves detailed information for a movie (runtime, trailer, overview).
+        Fetches Ukrainian and English metadata concurrently; falls back to EN overview
+        when the Ukrainian one is empty.
         """
         auth_params, _ = self._get_auth_params_and_headers()
-        params = {
+
+        uk_params = {
             **auth_params,
             "language": config.TMDB_LANGUAGE,
             "append_to_response": "videos",
         }
-        try:
-            response = await client.get(f"{TMDB_BASE_URL}/movie/{movie_id}", params=params)
-            response.raise_for_status()
-            data = response.json()
+        en_params = {
+            **auth_params,
+            "language": "en-US",
+            "append_to_response": "videos",
+        }
 
-            # If Ukrainian overview is empty, fall back to English overview
-            if not data.get("overview"):
-                eng_params = {**auth_params, "language": "en-US"}
-                eng_resp = await client.get(
-                    f"{TMDB_BASE_URL}/movie/{movie_id}",
-                    params=eng_params,
-                )
-                if eng_resp.status_code == 200:
-                    eng_data = eng_resp.json()
-                    data["overview"] = eng_data.get("overview", "Опис наразі відсутній.")
+        try:
+            # Fetch UK and EN metadata in parallel to avoid sequential round-trips
+            uk_resp, en_resp = await asyncio.gather(
+                client.get(f"{TMDB_BASE_URL}/movie/{movie_id}", params=uk_params),
+                client.get(f"{TMDB_BASE_URL}/movie/{movie_id}", params=en_params),
+            )
+            uk_resp.raise_for_status()
+            data = uk_resp.json()
+
+            # Use English overview only when Ukrainian one is absent
+            if not data.get("overview") and en_resp.status_code == 200:
+                en_data = en_resp.json()
+                data["overview"] = en_data.get("overview", "Опис наразі відсутній.")
+
+                # Prefer English videos if Ukrainian response has none
+                if not data.get("videos", {}).get("results") and en_data.get("videos", {}).get("results"):
+                    data["videos"] = en_data["videos"]
 
             # Search for YouTube trailer
             trailer_url = None

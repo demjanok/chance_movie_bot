@@ -1,3 +1,4 @@
+import config
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -8,7 +9,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Welcomes the user and displays the genre selection keyboard."""
     welcome_text = (
         "👋 <b>Привіт! Я твій гід по кіно на вечір.</b>\n\n"
-        "Я підбираю тільки перевірені фільми з високим рейтингом (⭐ від 7.0).\n\n"
+        f"Я підбираю тільки перевірені фільми з високим рейтингом (⭐ від {config.MIN_RATING}).\n\n"
         "Обери жанр, який тобі до душі, або довірся рандому:"
     )
 

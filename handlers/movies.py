@@ -1,5 +1,6 @@
 import html
 import logging
+from collections import deque
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
@@ -68,8 +69,11 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     # Display photo upload action in chat while fetching
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
 
-    # Retrieve recently seen movie IDs for this user session to avoid duplicates
-    seen_movies = context.user_data.setdefault("seen_movies", [])
+    # Retrieve recently seen movie IDs for this user session to avoid duplicates.
+    # Uses deque with maxlen for O(1) append/evict instead of list.pop(0).
+    seen_movies: deque = context.user_data.setdefault(
+        "seen_movies", deque(maxlen=config.SEEN_MOVIES_BUFFER_SIZE)
+    )
     exclude_ids = set(seen_movies)
 
     movie = await tmdb_service.get_random_movie(genre_id=genre_id, exclude_ids=exclude_ids)
@@ -92,12 +96,10 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         )
         return
 
-    # Record the shown movie ID in the user's recent buffer
+    # Record the shown movie ID in the user's recent buffer (deque auto-evicts oldest)
     movie_id = movie.get("id")
     if movie_id:
         seen_movies.append(movie_id)
-        if len(seen_movies) > config.SEEN_MOVIES_BUFFER_SIZE:
-            seen_movies.pop(0)
 
     caption = format_movie_caption(movie)
     keyboard = get_movie_actions_keyboard(
