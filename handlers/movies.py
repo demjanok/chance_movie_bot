@@ -68,7 +68,9 @@ def format_movie_caption(movie: dict, lang: str = DEFAULT_LANGUAGE) -> str:
 async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles genre selection and 'Another movie' button clicks with multi-language support."""
     query = update.callback_query
-    user_lang_code = query.from_user.language_code if query.from_user else None
+    user = query.from_user
+    user_id = user.id if user else None
+    user_lang_code = user.language_code if user else None
     lang = get_user_language(context.user_data, user_lang_code)
 
     await query.answer(text=get_message("picking_movie", lang=lang))
@@ -81,6 +83,16 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         genre_id = ANY_GENRE
 
     chat_id = query.message.chat_id
+
+    logger.info(
+        "Movie recommendation requested",
+        extra={
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "genre_id": genre_id,
+            "lang": lang,
+        },
+    )
 
     # Display photo upload action in chat while fetching
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
@@ -99,6 +111,15 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     )
 
     if not movie:
+        logger.warning(
+            "No movie found matching criteria",
+            extra={
+                "user_id": user_id,
+                "genre_id": genre_id,
+                "lang": lang,
+                "has_api_key": bool(tmdb_service.api_key),
+            },
+        )
         if not tmdb_service.api_key:
             error_msg = get_message("error_no_key", lang=lang)
         else:
@@ -115,6 +136,17 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     movie_id = movie.get("id")
     if movie_id:
         seen_movies.append(movie_id)
+
+    logger.info(
+        "Movie recommended to user",
+        extra={
+            "user_id": user_id,
+            "movie_id": movie_id,
+            "movie_title": movie.get("title"),
+            "genre_id": genre_id,
+            "lang": lang,
+        },
+    )
 
     caption = format_movie_caption(movie, lang=lang)
     keyboard = get_movie_actions_keyboard(
@@ -134,7 +166,16 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             )
             return
         except Exception as e:
-            logger.warning(f"Failed to send poster photo {poster_url}: {e}")
+            logger.warning(
+                "Failed to send poster photo",
+                exc_info=True,
+                extra={
+                    "poster_url": poster_url,
+                    "movie_id": movie_id,
+                    "user_id": user_id,
+                    "error": str(e),
+                },
+            )
 
     # Fallback: if poster is missing or failed to upload
     await query.message.reply_text(
@@ -147,8 +188,17 @@ async def movie_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 async def menu_genres_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Returns to the genre selection menu in the user's language."""
     query = update.callback_query
-    user_lang_code = query.from_user.language_code if query.from_user else None
+    user = query.from_user
+    user_lang_code = user.language_code if user else None
     lang = get_user_language(context.user_data, user_lang_code)
+
+    logger.info(
+        "User returned to genre selection menu",
+        extra={
+            "user_id": user.id if user else None,
+            "lang": lang,
+        },
+    )
 
     await query.answer()
     await query.message.reply_text(

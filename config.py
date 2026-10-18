@@ -30,3 +30,20 @@ MAX_DISCOVERY_PAGES = int(os.getenv("MAX_DISCOVERY_PAGES", "15"))
 # Number of recently shown movie IDs to track per user session to avoid duplicates.
 # A rolling buffer prevents showing recently suggested movies in a row.
 SEEN_MOVIES_BUFFER_SIZE = int(os.getenv("SEEN_MOVIES_BUFFER_SIZE", "50"))
+
+# TTL (in seconds) for the in-memory discover-page cache.
+# TMDB discover results change slowly, so caching them reduces latency and API usage.
+#   * 0        — disables caching entirely
+#   * 600      — 10 minutes (light caching)
+#   * 1200     — 20 minutes (default, good balance)
+#   * 3600     — 1 hour (aggressive caching, maximizes speed)
+DISCOVER_CACHE_TTL = int(os.getenv("DISCOVER_CACHE_TTL", "1200"))
+
+# Logging configuration
+# - LOG_LEVEL: 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
+# - LOG_FORMAT: 'json' (structured JSON logs for production/monitoring) or 'text' (human-readable)
+# - LOG_FILE: optional path to write rotating logs (e.g., 'logs/bot.log')
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+LOG_FORMAT = os.getenv("LOG_FORMAT", "json").strip().lower()
+LOG_FILE = os.getenv("LOG_FILE", "").strip() or None
+

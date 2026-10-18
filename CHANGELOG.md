@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.5] — 2026-10-19
+
+### Added
+- **Structured JSON Logging** (`logging_config.py`) — production-ready logging according to 12-Factor App and cloud observability standards (compatible with Datadog, ELK, Grafana Loki, AWS CloudWatch).
+  - Custom `JSONFormatter` producing single-line JSON records (NDJSON) with standard fields: `timestamp` (UTC ISO 8601), `level`, `service`, `logger`, `message`, `module`, `function`, `line`.
+  - Structured exception serialization capturing exception type, message, and formatted traceback.
+  - Automatic extraction and merging of contextual attributes passed via `extra={...}` into top-level JSON fields.
+  - Full Unicode and emoji support with automatic UTF-8 stream reconfiguration for Windows and Linux environments.
+  - Optional `RotatingFileHandler` support (10MB limit, 5 backup files) with automatic directory creation.
+- **Configurable Logging Environment Variables** (`config.py`, `.env.example`):
+  - `LOG_LEVEL` (default: `INFO`) — controls log verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`).
+  - `LOG_FORMAT` (default: `json`) — toggle between machine-readable `json` and human-readable `text`.
+  - `LOG_FILE` (optional) — path to rotating log file.
+- **Third-Party Noise Suppression** (`logging_config.py`) — throttled chatty polling and connection loggers (`httpx`, `httpcore`, `telegram`, `asyncio`, etc.) to `WARNING` by default to preserve a high signal-to-noise ratio.
+- **Structured Context Across All Handlers**:
+  - Global `error_handler` logs unhandled exceptions enriched with `user_id`, `chat_id`, and `update_id`.
+  - `start.py` logs `/start`, `/help`, and language changes with user context.
+  - `movies.py` logs recommendation requests and results with `user_id`, `genre_id`, `movie_id`, and `lang`.
+  - `tmdb_service.py` logs cache hits, HTTP errors, and details retrieval with structured parameters.
+- **Comprehensive Unit Test Suite** (`test_logging.py`) — automated verification of JSON formatting, Unicode/emoji safety, contextual fields, exception serialization, file rotation, and third-party logger quieting.
+
+---
+
 ## [1.4] — 2026-10-18
 
 ### Added

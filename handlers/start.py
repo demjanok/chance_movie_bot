@@ -1,3 +1,4 @@
+import logging
 import config
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -9,11 +10,23 @@ from locales import (
 )
 from keyboards import get_genres_keyboard, get_language_keyboard
 
+logger = logging.getLogger(__name__)
+
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Welcomes the user and displays the genre selection keyboard in the user's language."""
-    user_lang_code = update.effective_user.language_code if update.effective_user else None
+    user = update.effective_user
+    user_lang_code = user.language_code if user else None
     lang = get_user_language(context.user_data, user_lang_code)
+
+    logger.info(
+        "User started interaction (/start)",
+        extra={
+            "user_id": user.id if user else None,
+            "username": user.username if user else None,
+            "lang": lang,
+        },
+    )
 
     welcome_text = get_message("welcome", lang=lang, min_rating=config.MIN_RATING)
     keyboard = get_genres_keyboard(lang=lang)
@@ -36,8 +49,17 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Displays usage instructions and data source attribution in the user's language."""
-    user_lang_code = update.effective_user.language_code if update.effective_user else None
+    user = update.effective_user
+    user_lang_code = user.language_code if user else None
     lang = get_user_language(context.user_data, user_lang_code)
+
+    logger.info(
+        "User requested /help",
+        extra={
+            "user_id": user.id if user else None,
+            "lang": lang,
+        },
+    )
 
     help_text = get_message("help", lang=lang)
     if update.message:
@@ -46,8 +68,17 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def language_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Prompts the user to choose their preferred language via /language command."""
-    user_lang_code = update.effective_user.language_code if update.effective_user else None
+    user = update.effective_user
+    user_lang_code = user.language_code if user else None
     lang = get_user_language(context.user_data, user_lang_code)
+
+    logger.info(
+        "User opened language menu via command",
+        extra={
+            "user_id": user.id if user else None,
+            "lang": lang,
+        },
+    )
 
     text = get_message("choose_language", lang=lang)
     keyboard = get_language_keyboard(lang=lang)
@@ -67,6 +98,14 @@ async def select_language_callback(update: Update, context: ContextTypes.DEFAULT
     user_lang_code = query.from_user.language_code if query.from_user else None
     lang = get_user_language(context.user_data, user_lang_code)
 
+    logger.info(
+        "User opened language menu via button",
+        extra={
+            "user_id": query.from_user.id if query.from_user else None,
+            "lang": lang,
+        },
+    )
+
     text = get_message("choose_language", lang=lang)
     keyboard = get_language_keyboard(lang=lang)
     await query.message.reply_text(text=text, reply_markup=keyboard, parse_mode="HTML")
@@ -77,13 +116,24 @@ async def set_language_callback(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     data = query.data or ""
     # Expected format: "set_lang:<code"
+    chosen_lang = None
     if ":" in data:
         _, lang_code = data.split(":", 1)
         if lang_code in SUPPORTED_LANGUAGES:
             context.user_data["language"] = lang_code
+            chosen_lang = lang_code
 
     user_lang_code = query.from_user.language_code if query.from_user else None
     lang = get_user_language(context.user_data, user_lang_code)
+
+    logger.info(
+        "User changed language",
+        extra={
+            "user_id": query.from_user.id if query.from_user else None,
+            "selected_lang": chosen_lang,
+            "active_lang": lang,
+        },
+    )
 
     # Toast alert confirming language switch
     await query.answer(text=get_message("language_changed", lang=lang))

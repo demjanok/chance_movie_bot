@@ -9,6 +9,7 @@ from telegram.ext import (
 )
 
 import config
+from logging_config import setup_logging
 from handlers.start import (
     start_handler,
     help_handler,
@@ -20,20 +21,31 @@ from handlers.movies import movie_callback_handler, menu_genres_callback
 from locales import get_user_language, get_message
 from services.tmdb_service import tmdb_service
 
-# Logging configuration
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
+# Initialize structured logging (JSON or human-readable format based on config)
+setup_logging(
+    log_level=config.LOG_LEVEL,
+    log_format=config.LOG_FORMAT,
+    log_file=config.LOG_FILE,
 )
 logger = logging.getLogger(__name__)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Global error handler — logs unhandled exceptions and notifies the user
-    via a localized alert so they are never left with a spinner or silence.
+    Global error handler — logs unhandled exceptions with structured update context
+    and notifies the user via a localized alert so they are never left with a spinner or silence.
     """
-    logger.error("Unhandled exception", exc_info=context.error)
+    extra_context: dict = {}
+    if isinstance(update, Update):
+        extra_context["update_id"] = update.update_id
+        if update.effective_user:
+            extra_context["user_id"] = update.effective_user.id
+            extra_context["username"] = update.effective_user.username
+        if update.effective_chat:
+            extra_context["chat_id"] = update.effective_chat.id
+
+    logger.error("Unhandled exception occurred", exc_info=context.error, extra=extra_context)
+
     if isinstance(update, Update) and update.callback_query:
         try:
             user_data = getattr(context, "user_data", None)
@@ -79,10 +91,20 @@ def main() -> None:
     # Register global error handler
     app.add_error_handler(error_handler)
 
-    logger.info("🎬 Bot launched and ready for requests...")
+    logger.info(
+        "Bot application initialized and starting polling...",
+        extra={
+            "log_level": config.LOG_LEVEL,
+            "log_format": config.LOG_FORMAT,
+            "min_rating": config.MIN_RATING,
+            "min_votes": config.MIN_VOTES,
+            "default_language": config.DEFAULT_LANGUAGE,
+        },
+    )
 
     async def on_shutdown(application) -> None:
         """Close the shared HTTP client on bot shutdown."""
+        logger.info("Bot shutting down, closing HTTP client connections...")
         await tmdb_service.close()
 
     app.post_shutdown = on_shutdown

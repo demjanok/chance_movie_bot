@@ -24,9 +24,6 @@ ANY_GENRE = "any"
 # Default genres dictionary (Ukrainian fallback for backward compatibility)
 POPULAR_GENRES = ALL_POPULAR_GENRES["uk"]
 
-# TTL (seconds) for caching discover page results in memory
-_DISCOVER_CACHE_TTL = 1200  # 20 minutes
-
 
 class TMDBService:
     def __init__(self, api_key: str):
@@ -63,7 +60,7 @@ class TMDBService:
     def _get_cached_page(self, cache_key: str) -> Optional[list]:
         """Returns cached discover results if still within TTL, otherwise None."""
         entry = self._discover_cache.get(cache_key)
-        if entry and (time.monotonic() - entry[1]) < _DISCOVER_CACHE_TTL:
+        if entry and (time.monotonic() - entry[1]) < config.DISCOVER_CACHE_TTL:
             return entry[0]
         return None
 
@@ -87,7 +84,10 @@ class TMDBService:
 
         cached = self._get_cached_page(cache_key)
         if cached is not None:
-            logger.debug("Cache hit for discover page %s (genre=%s, lang=%s)", page, genre_id, lang)
+            logger.debug(
+                "Cache hit for discover page",
+                extra={"page": page, "genre_id": genre_id, "lang": lang},
+            )
             return cached
 
         params = {**base_params, "page": page}
@@ -173,7 +173,11 @@ class TMDBService:
             return await self.get_movie_details(client, movie_id, lang=lang)
 
         except httpx.HTTPError as e:
-            logger.error(f"Error querying TMDB discover API: {e}")
+            logger.error(
+                "Error querying TMDB discover API",
+                exc_info=True,
+                extra={"genre_id": genre_id, "lang": lang, "error": str(e)},
+            )
             return None
 
     async def _get_total_pages(
@@ -189,7 +193,7 @@ class TMDBService:
         genre_id = base_params.get("with_genres", ANY_GENRE)
         cache_key = f"{lang}:{genre_id}:meta"
         cached = self._discover_cache.get(cache_key)
-        if cached and (time.monotonic() - cached[1]) < _DISCOVER_CACHE_TTL:
+        if cached and (time.monotonic() - cached[1]) < config.DISCOVER_CACHE_TTL:
             return cached[0]  # type: ignore[return-value]
 
         params = {**base_params, "page": 1}
@@ -284,7 +288,11 @@ class TMDBService:
             return data
 
         except httpx.HTTPError as e:
-            logger.error(f"Error fetching details for movie {movie_id}: {e}")
+            logger.error(
+                "Error fetching details for movie",
+                exc_info=True,
+                extra={"movie_id": movie_id, "lang": lang, "error": str(e)},
+            )
             return None
 
 

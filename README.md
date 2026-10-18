@@ -10,6 +10,7 @@ A Telegram bot for discovering top-rated movie recommendations for your evening,
 - 🛡️ **Session Deduplication**: Keeps track of recently suggested movies in a rolling buffer so you never see repetitive suggestions in a single session.
 - ▶️ **Trailers & Posters**: High-resolution movie posters and direct YouTube trailer links (when available in TMDB).
 - ⚡ **High Performance**: Persistent asynchronous HTTP connections and in-memory TTL caching for discover pages.
+- 📊 **Structured JSON Logging**: Production-ready structured logging (JSON and human-readable text) adhering to 12-Factor App and observability best practices (compatible with Datadog, ELK, Loki, CloudWatch).
 
 ## ⚙️ Installation & Setup
 
@@ -34,6 +35,11 @@ A Telegram bot for discovering top-rated movie recommendations for your evening,
    DEFAULT_LANGUAGE=uk
    MAX_DISCOVERY_PAGES=15
    SEEN_MOVIES_BUFFER_SIZE=50
+
+   # Logging settings
+   LOG_LEVEL=INFO
+   LOG_FORMAT=json
+   LOG_FILE=
    ```
 
 4. **Run the bot**:
