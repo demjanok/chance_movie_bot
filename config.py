@@ -12,7 +12,7 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY", "").strip()
 # Movie filtering configuration
 MIN_RATING = float(os.getenv("MIN_RATING", "7.0"))
 MIN_VOTES = int(os.getenv("MIN_VOTES", "150"))
-TMDB_LANGUAGE = "uk-UA"
+DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "uk").strip()
 
 # Maximum number of pages to sample from when picking a random movie.
 #

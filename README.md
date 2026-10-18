@@ -1,31 +1,47 @@
 # 🎬 Chance Movie Bot
 
-Telegram-бот для підбору якісного кіно на вечір на базі **The Movie Database (TMDB) API** та бібліотеки `python-telegram-bot` (v22).
+A Telegram bot for discovering top-rated movie recommendations for your evening, powered by **The Movie Database (TMDB) API** and `python-telegram-bot` (v22).
 
-## 🚀 Функціонал
-- 🎭 Вибір фільмів за популярними жанрами (Комедія, Бойовик, Фантастика, Трилер, Жахи тощо) або випадковий вибір.
-- ⭐ Фільтрація тільки якісного кіно (рейтинг ≥ 7.0 та мінімум 150 голосів, щоб відсіяти нерелевантні фільми).
-- 🇺🇦 Локалізація: українські описи, назви та постери.
-- 🔄 Кнопка «Інший фільм» для швидкого оновлення рекомендації в один клік.
-- ▶️ Пряме посилання на трейлер на YouTube (якщо є в базі).
+## 🚀 Features
+- 🎭 **Genre Selection**: Browse by popular genres (Comedy, Action, Sci-Fi, Thriller, Horror, etc.) or go with a completely random choice.
+- 🌐 **Multi-Language Support (i18n)**: Seamless bilingual experience with **Ukrainian** (🇺🇦) and **English** (🇬🇧). Switch languages on the fly via `/language` or the in-menu button.
+- ⭐ **Quality Filtering**: Only verified, high-rated movies (rating ≥ 7.0 and minimum 150 votes) to filter out low-quality entries.
+- 🔄 **One-Click Reroll**: "Another movie" button allows instant next recommendations.
+- 🛡️ **Session Deduplication**: Keeps track of recently suggested movies in a rolling buffer so you never see repetitive suggestions in a single session.
+- ▶️ **Trailers & Posters**: High-resolution movie posters and direct YouTube trailer links (when available in TMDB).
+- ⚡ **High Performance**: Persistent asynchronous HTTP connections and in-memory TTL caching for discover pages.
 
-## ⚙️ Встановлення та запуск
+## ⚙️ Installation & Setup
 
-1. **Встановіть залежності**:
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/demjanok/chance_movie_bot.git
+   cd chance_movie_bot
+   ```
+
+2. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-2. **Налаштуйте змінні оточення**:
-   Створіть файл `.env` (можна скопіювати з `.env.example`):
+3. **Configure environment variables**:
+   Create a `.env` file (you can copy `.env.example`):
    ```env
-   TELEGRAM_BOT_TOKEN=ваш_токен_від_BotFather
-   TMDB_API_KEY=ваш_tmdb_api_key
+   TELEGRAM_BOT_TOKEN=your_telegram_bot_token_from_botfather
+   TMDB_API_KEY=your_tmdb_api_key_or_bearer_token
    MIN_RATING=7.0
    MIN_VOTES=150
+   DEFAULT_LANGUAGE=uk
+   MAX_DISCOVERY_PAGES=15
+   SEEN_MOVIES_BUFFER_SIZE=50
    ```
 
-3. **Запустіть бота**:
+4. **Run the bot**:
    ```bash
    python main.py
    ```
+
+## 📱 Bot Commands
+- `/start` — Start the bot and open the movie genre selection menu.
+- `/help` — View usage guide and TMDB data attribution.
+- `/language` (or `/lang`) — Change the interface and recommendation language.

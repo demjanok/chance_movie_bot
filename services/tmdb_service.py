@@ -6,6 +6,12 @@ from typing import Optional, Dict, Any
 import httpx
 
 import config
+from locales import (
+    TMDB_LANGUAGE_CODES,
+    DEFAULT_LANGUAGE,
+    POPULAR_GENRES as ALL_POPULAR_GENRES,
+    get_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,21 +21,8 @@ TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 # Sentinel value for "any genre" selection
 ANY_GENRE = "any"
 
-# List of popular genres displayed in the Telegram bot menu
-POPULAR_GENRES = {
-    "35": "🎭 Комедія",
-    "28": "🍿 Бойовик",
-    "878": "🚀 Фантастика",
-    "53": "🔪 Трилер",
-    "18": "🎭 Драма",
-    "27": "😱 Жахи",
-    "16": "🎨 Мультфільм",
-    "9648": "🔍 Детектив",
-    "10749": "💖 Мелодрама",
-    "14": "🧙 Фентезі",
-    "80": "🚓 Кримінал",
-    ANY_GENRE: "🎲 Будь-який жанр",
-}
+# Default genres dictionary (Ukrainian fallback for backward compatibility)
+POPULAR_GENRES = ALL_POPULAR_GENRES["uk"]
 
 # TTL (seconds) for caching discover page results in memory
 _DISCOVER_CACHE_TTL = 1200  # 20 minutes
@@ -83,16 +76,18 @@ class TMDBService:
         client: httpx.AsyncClient,
         base_params: dict,
         page: int,
+        lang: str = DEFAULT_LANGUAGE,
     ) -> list:
         """
         Fetches a single discover page, using the in-memory cache when available.
+        Includes language in the cache key to avoid mixing localized data.
         """
         genre_id = base_params.get("with_genres", ANY_GENRE)
-        cache_key = f"{genre_id}:{page}"
+        cache_key = f"{lang}:{genre_id}:{page}"
 
         cached = self._get_cached_page(cache_key)
         if cached is not None:
-            logger.debug("Cache hit for discover page %s (genre=%s)", page, genre_id)
+            logger.debug("Cache hit for discover page %s (genre=%s, lang=%s)", page, genre_id, lang)
             return cached
 
         params = {**base_params, "page": page}
@@ -108,9 +103,10 @@ class TMDBService:
         exclude_ids: Optional[set[int]] = None,
         min_rating: float = config.MIN_RATING,
         min_votes: int = config.MIN_VOTES,
+        lang: str = DEFAULT_LANGUAGE,
     ) -> Optional[Dict[str, Any]]:
         """
-        Fetches a random quality movie filtered by genre and rating,
+        Fetches a random quality movie filtered by genre, rating, and language,
         avoiding movies listed in exclude_ids when possible.
         """
         if not self.api_key:
@@ -121,10 +117,11 @@ class TMDBService:
             exclude_ids = set()
 
         auth_params, _ = self._get_auth_params_and_headers()
+        tmdb_lang = TMDB_LANGUAGE_CODES.get(lang, "uk-UA")
 
         base_params: dict = {
             **auth_params,
-            "language": config.TMDB_LANGUAGE,
+            "language": tmdb_lang,
             "sort_by": "popularity.desc",
             "vote_average.gte": min_rating,
             "vote_count.gte": min_votes,
@@ -138,14 +135,12 @@ class TMDBService:
 
         try:
             # 1. Fetch page 1 to determine total available pages (may come from cache)
-            first_page_results = await self._fetch_discover_page(client, base_params, page=1)
+            first_page_results = await self._fetch_discover_page(
+                client, base_params, page=1, lang=lang
+            )
 
-            # Peek at total_pages via a fresh request only if page 1 wasn't cached
-            genre_key = base_params.get("with_genres", ANY_GENRE)
-            cache_key_p1 = f"{genre_key}:1"
-            cached_entry = self._discover_cache.get(cache_key_p1)
-            # We need total_pages — re-fetch page 1 metadata if not already stored
-            total_pages = await self._get_total_pages(client, base_params)
+            # Peek at total_pages via a fresh request only if page 1 metadata is not cached
+            total_pages = await self._get_total_pages(client, base_params, lang=lang)
 
             if total_pages == 0 or not first_page_results:
                 return None
@@ -156,7 +151,7 @@ class TMDBService:
 
             # 2. Fetch all selected pages concurrently
             page_results_list: list[list] = await asyncio.gather(
-                *[self._fetch_discover_page(client, base_params, p) for p in pages_to_try]
+                *[self._fetch_discover_page(client, base_params, p, lang=lang) for p in pages_to_try]
             )
 
             chosen_movie = None
@@ -175,19 +170,24 @@ class TMDBService:
             movie_id = chosen_movie["id"]
 
             # 3. Retrieve detailed movie metadata (runtime, videos/trailers, description)
-            return await self.get_movie_details(client, movie_id)
+            return await self.get_movie_details(client, movie_id, lang=lang)
 
         except httpx.HTTPError as e:
             logger.error(f"Error querying TMDB discover API: {e}")
             return None
 
-    async def _get_total_pages(self, client: httpx.AsyncClient, base_params: dict) -> int:
+    async def _get_total_pages(
+        self,
+        client: httpx.AsyncClient,
+        base_params: dict,
+        lang: str = DEFAULT_LANGUAGE,
+    ) -> int:
         """
         Returns total_pages for a discover query.
         Uses a cached response for page 1 if available, otherwise fetches it.
         """
         genre_id = base_params.get("with_genres", ANY_GENRE)
-        cache_key = f"{genre_id}:meta"
+        cache_key = f"{lang}:{genre_id}:meta"
         cached = self._discover_cache.get(cache_key)
         if cached and (time.monotonic() - cached[1]) < _DISCOVER_CACHE_TTL:
             return cached[0]  # type: ignore[return-value]
@@ -199,7 +199,7 @@ class TMDBService:
         total_pages = data.get("total_pages", 0)
 
         # Also cache page 1 results while we're at it
-        p1_key = f"{genre_id}:1"
+        p1_key = f"{lang}:{genre_id}:1"
         if p1_key not in self._discover_cache:
             self._set_cached_page(p1_key, data.get("results", []))
 
@@ -207,42 +207,65 @@ class TMDBService:
         self._discover_cache[cache_key] = (total_pages, time.monotonic())
         return total_pages
 
-    async def get_movie_details(self, client: httpx.AsyncClient, movie_id: int) -> Optional[Dict[str, Any]]:
+    async def get_movie_details(
+        self,
+        client: httpx.AsyncClient,
+        movie_id: int,
+        lang: str = DEFAULT_LANGUAGE,
+    ) -> Optional[Dict[str, Any]]:
         """
         Retrieves detailed information for a movie (runtime, trailer, overview).
-        Fetches Ukrainian and English metadata concurrently; falls back to EN overview
-        when the Ukrainian one is empty.
+        For Ukrainian, fetches UK and EN metadata concurrently and falls back to EN overview
+        when the Ukrainian one is absent.
+        For English, fetches EN metadata directly.
         """
         auth_params, _ = self._get_auth_params_and_headers()
 
-        uk_params = {
-            **auth_params,
-            "language": config.TMDB_LANGUAGE,
-            "append_to_response": "videos",
-        }
-        en_params = {
-            **auth_params,
-            "language": "en-US",
-            "append_to_response": "videos",
-        }
-
         try:
-            # Fetch UK and EN metadata in parallel to avoid sequential round-trips
-            uk_resp, en_resp = await asyncio.gather(
-                client.get(f"{TMDB_BASE_URL}/movie/{movie_id}", params=uk_params),
-                client.get(f"{TMDB_BASE_URL}/movie/{movie_id}", params=en_params),
-            )
-            uk_resp.raise_for_status()
-            data = uk_resp.json()
+            if lang == "en":
+                en_params = {
+                    **auth_params,
+                    "language": "en-US",
+                    "append_to_response": "videos",
+                }
+                en_resp = await client.get(f"{TMDB_BASE_URL}/movie/{movie_id}", params=en_params)
+                en_resp.raise_for_status()
+                data = en_resp.json()
 
-            # Use English overview only when Ukrainian one is absent
-            if not data.get("overview") and en_resp.status_code == 200:
-                en_data = en_resp.json()
-                data["overview"] = en_data.get("overview", "Опис наразі відсутній.")
+                if not data.get("overview"):
+                    data["overview"] = get_message("caption_no_overview", lang=lang)
 
-                # Prefer English videos if Ukrainian response has none
-                if not data.get("videos", {}).get("results") and en_data.get("videos", {}).get("results"):
-                    data["videos"] = en_data["videos"]
+            else:
+                uk_params = {
+                    **auth_params,
+                    "language": "uk-UA",
+                    "append_to_response": "videos",
+                }
+                en_params = {
+                    **auth_params,
+                    "language": "en-US",
+                    "append_to_response": "videos",
+                }
+
+                # Fetch UK and EN metadata in parallel to avoid sequential round-trips
+                uk_resp, en_resp = await asyncio.gather(
+                    client.get(f"{TMDB_BASE_URL}/movie/{movie_id}", params=uk_params),
+                    client.get(f"{TMDB_BASE_URL}/movie/{movie_id}", params=en_params),
+                )
+                uk_resp.raise_for_status()
+                data = uk_resp.json()
+
+                # Use English overview only when Ukrainian one is absent
+                if not data.get("overview") and en_resp.status_code == 200:
+                    en_data = en_resp.json()
+                    data["overview"] = en_data.get("overview", "")
+
+                    # Prefer English videos if Ukrainian response has none
+                    if not data.get("videos", {}).get("results") and en_data.get("videos", {}).get("results"):
+                        data["videos"] = en_data["videos"]
+
+                if not data.get("overview"):
+                    data["overview"] = get_message("caption_no_overview", lang=lang)
 
             # Search for YouTube trailer
             trailer_url = None

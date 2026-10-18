@@ -4,9 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.4] — 2026-10-18
+
+### Added
+- **Multi-language localization (i18n)** (`locales.py`) — full internationalization supporting Ukrainian (`uk`) and English (`en`).
+  - Added centralized translation catalogs for all user-facing strings, buttons, genre names, and movie card formatting.
+  - Added automatic user language detection from Telegram client settings (`language_code`), with fallback to `DEFAULT_LANGUAGE` (`uk`).
+  - Added `/language` and `/lang` commands alongside an interactive language selector inline keyboard (`get_language_keyboard`).
+  - Added "🌐 Language / Мова" button in the genre selection menu for quick language switching.
+  - Added dynamic TMDB API localized querying (`uk-UA` and `en-US`), fetching titles, overviews, and genres in the user's active language.
+  - Multi-language cache isolation: discovery cache keys now partition by language (`{lang}:{genre_id}:{page}`).
+- **Configurable `DEFAULT_LANGUAGE`** (`config.py`, `.env.example`) — new environment variable to set the default interface language.
+
+### Changed
+- **Full documentation and codebase translated to English** — translated `README.md` and ensured all comments, docstrings, and log messages across all modules are written in English.
+- **Dynamic localized handlers** — updated `handlers/start.py`, `handlers/movies.py`, `keyboards.py`, and `main.py` to adapt dynamically to the user's chosen language.
+
 ---
 
-## 1.3 — 2026-10-18
+## [1.3] — 2026-10-18
 
 ### Performance
 - **Persistent `AsyncClient`** (`tmdb_service.py`) — replaced `async with httpx.AsyncClient(...)` inside every
@@ -131,7 +147,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-[Unreleased]: https://github.com/demjanok/chance_movie_bot/compare/HEAD...HEAD
+[Unreleased]: https://github.com/demjanok/chance_movie_bot/compare/1.4...HEAD
+[1.4]: https://github.com/demjanok/chance_movie_bot/compare/1.3...1.4
+[1.3]: https://github.com/demjanok/chance_movie_bot/compare/1.2...1.3
 [1.2]: https://github.com/demjanok/chance_movie_bot/compare/1.1...1.2
 [1.1]: https://github.com/demjanok/chance_movie_bot/compare/1.0...1.1
 [1.0]: https://github.com/demjanok/chance_movie_bot/compare/0.2...1.0
