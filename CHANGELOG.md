@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.6] — 2026-10-25
+
+### Added
+- **Docker support** — production-ready containerization with multi-stage build and non-root runtime user.
+  - **`Dockerfile`** (multi-stage):
+    - `builder` stage: installs Python dependencies into an isolated prefix (`/install`) using `pip install --prefix` — keeps the final image free of build tooling.
+    - `runtime` stage: based on `python:3.12-slim`; copies only the installed packages and application source; runs as unprivileged user `botuser` (UID 1001) for security hardening.
+    - `PYTHONUNBUFFERED=1` ensures logs stream to stdout/stderr without buffering, compatible with `docker logs` and log-collection agents.
+    - `HEALTHCHECK` verifies the Python process is alive every 30 seconds.
+  - **`docker-compose.yml`**:
+    - Single `bot` service with `restart: unless-stopped` for automatic crash recovery.
+    - `env_file: .env` — secrets are never baked into the image; the `.env` file is loaded at runtime.
+    - Named volume `bot_logs` mounted at `/app/logs` for optional persistent file logging (activated via `LOG_FILE=logs/bot.log`).
+    - Docker `json-file` logging driver with 10 MB rotation and 5 backup files, aligning with the app-level `JSONFormatter` output.
+    - Resource limits: CPU 0.5 cores / 256 MB RAM (reservations: 0.1 CPU / 64 MB).
+  - **`.dockerignore`**: excludes `.env`, `.venv`, `.git`, `*.log`, test files, docs, and Docker files themselves to keep the build context minimal and prevent secret leakage.
+  - **`.gitignore`** updated: added `logs/` and `*.log` exclusions.
+
+### Changed
+- **`README.md`** — added **Option A (Docker)** as the recommended deployment path with full `docker compose` instructions; the existing local Python setup moved to **Option B**.
+
+---
+
 ## [1.5] — 2026-10-19
 
 ### Added

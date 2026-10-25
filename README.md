@@ -11,10 +11,44 @@ A Telegram bot for discovering top-rated movie recommendations for your evening,
 - ▶️ **Trailers & Posters**: High-resolution movie posters and direct YouTube trailer links (when available in TMDB).
 - ⚡ **High Performance**: Persistent asynchronous HTTP connections and in-memory TTL caching for discover pages.
 - 📊 **Structured JSON Logging**: Production-ready structured logging (JSON and human-readable text) adhering to 12-Factor App and observability best practices (compatible with Datadog, ELK, Loki, CloudWatch).
+- 🐳 **Docker-ready**: Multi-stage `Dockerfile` + `docker-compose.yml` for one-command deployment anywhere Docker runs.
 
 ## ⚙️ Installation & Setup
 
+### Option A — Docker (recommended)
+
 1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/demjanok/chance_movie_bot.git
+   cd chance_movie_bot
+   ```
+
+2. **Configure environment variables**:
+   ```bash
+   cp .env.example .env
+   # Fill in TELEGRAM_BOT_TOKEN and TMDB_API_KEY
+   ```
+
+3. **Build & start**:
+   ```bash
+   docker compose up -d --build
+   ```
+
+4. **View live logs**:
+   ```bash
+   docker compose logs -f
+   ```
+
+5. **Stop**:
+   ```bash
+   docker compose down
+   ```
+
+---
+
+### Option B — Local Python
+
+1. **Clone & enter directory**:
    ```bash
    git clone https://github.com/demjanok/chance_movie_bot.git
    cd chance_movie_bot

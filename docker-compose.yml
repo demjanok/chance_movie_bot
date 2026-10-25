@@ -1,0 +1,53 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime          # explicit multi-stage target
+
+    image: chance-movie-bot:latest
+
+    container_name: chance_movie_bot
+
+    restart: unless-stopped   # auto-restart on crash; won't restart after `docker stop`
+
+    # ── Secrets: never bake tokens into the image ────────────
+    # Copy .env.example → .env and fill in your values.
+    env_file:
+      - .env
+
+    # ── Override / extend env vars from .env ─────────────────
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONIOENCODING: "UTF-8"
+      LOG_FORMAT: "${LOG_FORMAT:-json}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      LOG_FILE: "${LOG_FILE:-}"
+
+    # ── Persist log files (optional) ─────────────────────────
+    # Only useful when LOG_FILE is set in .env (e.g. LOG_FILE=logs/bot.log).
+    # Safe to leave even when LOG_FILE is empty (volume stays empty).
+    volumes:
+      - bot_logs:/app/logs
+
+    # ── Resource limits (sane defaults for a polling bot) ────
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+
+    # ── Logging driver: capture stdout JSON lines ─────────────
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  bot_logs:
+    driver: local
+
