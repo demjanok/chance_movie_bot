@@ -1,0 +1,169 @@
+# ============================================================
+# Build and Publish Docker Image → GitHub Container Registry
+# ============================================================
+#
+# Registry: ghcr.io/demjanok/chance_movie_bot
+#
+# Triggers:
+#   • push to `master`                 → tag :latest + :<sha>
+#   • push of a semver tag (v1.2.3)   → tag :1.2.3 + :1.2 + :1 + :latest
+#   • pull_request targeting `master`  → build only (no push) for CI validation
+#
+# Permissions required (set automatically via GITHUB_TOKEN):
+#   contents: read
+#   packages: write
+# ============================================================
+
+name: Build and Publish Docker Image
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]*"   # v1.0.0, v1.2.3-rc1, etc.
+    paths-ignore:                   # skip docs-only changes
+      - "**.md"
+      - ".gitignore"
+      - "CHANGELOG.md"
+  pull_request:
+    branches:
+      - master
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
+      - "CHANGELOG.md"
+
+# Cancel in-progress runs for the same branch/PR to save runner minutes
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}   # demjanok/chance_movie_bot
+
+jobs:
+  build-and-push:
+    name: Build & Push image
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read    # checkout source
+      packages: write   # push to ghcr.io
+      security-events: write  # upload Trivy SARIF results
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # ── 2. QEMU – enable cross-platform builds ──────────────
+      # Allows building linux/arm64 (Raspberry Pi / ARM VPS) on
+      # the x86_64 GitHub-hosted runner.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # ── 3. Buildx – advanced builder with cache support ─────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── 4. Login to GHCR ────────────────────────────────────
+      # Skipped on pull_request (no write access for forks).
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 5. Generate image tags & labels ─────────────────────
+      # docker/metadata-action produces:
+      #   • PR:          ghcr.io/…:pr-42
+      #   • master push: ghcr.io/…:master  + ghcr.io/…:sha-abc1234
+      #   • v1.2.3 tag:  ghcr.io/…:1.2.3  + ghcr.io/…:1.2
+      #                  + ghcr.io/…:1     + ghcr.io/…:latest
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # semver tags: v1.2.3 → 1.2.3, 1.2, 1, latest
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            # branch push: master → master + sha
+            type=ref,event=branch
+            type=sha,prefix=sha-,format=short,event=push
+            # PRs: pr-<number> (build only, not pushed)
+            type=ref,event=pr
+          labels: |
+            org.opencontainers.image.title=Chance Movie Bot
+            org.opencontainers.image.description=Telegram bot for random high-rated movie recommendations
+            org.opencontainers.image.url=https://github.com/demjanok/chance_movie_bot
+            org.opencontainers.image.source=https://github.com/demjanok/chance_movie_bot
+
+      # ── 6. Build (+ push on non-PR) ─────────────────────────
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runtime
+          # Build for both amd64 (cloud VPS) and arm64 (Raspberry Pi / ARM servers)
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # GitHub Actions cache – reuses layer cache across runs (free)
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+          # Embed git info as build args (visible in `docker inspect`)
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+      # ── 7. Security scan with Trivy ─────────────────────────
+      # Scans the freshly built image for known CVEs.
+      # Results are uploaded to GitHub Security → Code Scanning.
+      # Runs even on PRs (image is loaded locally, not pushed).
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+        # Don't fail the workflow — report only
+        continue-on-error: true
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
+
+      # ── 8. Summary ──────────────────────────────────────────
+      - name: Write job summary
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "### 🐳 Docker image published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Registry** | \`${{ env.REGISTRY }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image** | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tags** | \`${{ steps.meta.outputs.tags }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Digest** | \`${{ steps.build.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Platforms** | \`linux/amd64, linux/arm64\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull command:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+

@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.7] — 2026-10-25
+
+### Added
+- **GitHub Actions CI/CD — Build and Publish Docker Image** (`.github/workflows/docker-publish.yml`).
+  - **Triggers**:
+    - `push` to `master` → publishes `ghcr.io/demjanok/chance_movie_bot:latest` + `:sha-<short>`.
+    - `push` of a semver tag (`v1.2.3`) → publishes `:1.2.3`, `:1.2`, `:1`, `:latest` simultaneously.
+    - `pull_request` to `master` → build-only validation (no image is pushed); safely works for forks.
+    - `paths-ignore` on `**.md`, `.gitignore`, `CHANGELOG.md` — docs-only commits do not trigger a rebuild.
+  - **Multi-platform builds** (`linux/amd64` + `linux/arm64`) via QEMU + Docker Buildx — a single image manifest works on both cloud VPS (x86_64) and Raspberry Pi / ARM servers.
+  - **GitHub Actions layer cache** (`type=gha, mode=max`) — unchanged layers are reused across runs, cutting cold-build time significantly.
+  - **`docker/metadata-action`** — generates OCI-compliant image tags and labels (`org.opencontainers.image.*`) automatically from git context.
+  - **Trivy security scanner** — scans the built image for CRITICAL/HIGH CVEs; results uploaded to GitHub Security → Code Scanning (SARIF); non-blocking (`continue-on-error: true`).
+  - **`concurrency` guard** — in-progress runs for the same branch/PR are cancelled automatically to avoid duplicate builds and wasted runner minutes.
+  - **Job summary** — a markdown summary with image name, tags, digest, platforms, and a ready-to-use `docker pull` command is posted to the GitHub Actions run page after each successful push.
+
+---
+
 ## [1.6] — 2026-10-25
 
 ### Added

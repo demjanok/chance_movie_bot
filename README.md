@@ -1,5 +1,8 @@
 # 🎬 Chance Movie Bot
 
+[![Build and Publish Docker Image](https://github.com/demjanok/chance_movie_bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/demjanok/chance_movie_bot/actions/workflows/docker-publish.yml)
+[![Docker Image](https://ghcr.io/demjanok/chance_movie_bot/badge)](https://ghcr.io/demjanok/chance_movie_bot)
+
 A Telegram bot for discovering top-rated movie recommendations for your evening, powered by **The Movie Database (TMDB) API** and `python-telegram-bot` (v22).
 
 ## 🚀 Features
@@ -12,6 +15,7 @@ A Telegram bot for discovering top-rated movie recommendations for your evening,
 - ⚡ **High Performance**: Persistent asynchronous HTTP connections and in-memory TTL caching for discover pages.
 - 📊 **Structured JSON Logging**: Production-ready structured logging (JSON and human-readable text) adhering to 12-Factor App and observability best practices (compatible with Datadog, ELK, Loki, CloudWatch).
 - 🐳 **Docker-ready**: Multi-stage `Dockerfile` + `docker-compose.yml` for one-command deployment anywhere Docker runs.
+- 🚀 **CI/CD via GitHub Actions**: Automatic multi-platform Docker image build (`amd64` + `arm64`) and publish to `ghcr.io` on every push and semver tag; includes Trivy security scanning.
 
 ## ⚙️ Installation & Setup
 
@@ -85,3 +89,29 @@ A Telegram bot for discovering top-rated movie recommendations for your evening,
 - `/start` — Start the bot and open the movie genre selection menu.
 - `/help` — View usage guide and TMDB data attribution.
 - `/language` (or `/lang`) — Change the interface and recommendation language.
+
+
+## 🚀 CI/CD & Docker Registry
+
+Docker images are built automatically by GitHub Actions and published to the **GitHub Container Registry (GHCR)**:
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/demjanok/chance_movie_bot:latest
+
+# Pull a specific release
+docker pull ghcr.io/demjanok/chance_movie_bot:1.7.0
+```
+
+### Releasing a new version
+
+```bash
+git tag v1.7.0
+git push origin v1.7.0
+```
+
+This triggers the workflow and publishes:
+- `ghcr.io/demjanok/chance_movie_bot:1.7.0`
+- `ghcr.io/demjanok/chance_movie_bot:1.7`
+- `ghcr.io/demjanok/chance_movie_bot:1`
+- `ghcr.io/demjanok/chance_movie_bot:latest`
