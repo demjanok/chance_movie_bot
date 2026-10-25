@@ -6,3 +6,7 @@ __pycache__/
 *.py[cod]
 *.log
 logs/
+
+# Kubernetes — never commit a filled-in secret
+# (commit secret.yaml only with REPLACE_ME placeholders)
+k8s/secret.filled.yaml

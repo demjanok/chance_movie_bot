@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: chance-movie-bot
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  # secret.yaml is intentionally excluded — create the Secret imperatively:
+  #
+  #   microk8s kubectl create secret generic chance-movie-bot-secrets \
+  #     --namespace=chance-movie-bot \
+  #     --from-literal=TELEGRAM_BOT_TOKEN="..." \
+  #     --from-literal=TMDB_API_KEY="..."
+

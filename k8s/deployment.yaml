@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chance-movie-bot
+  namespace: chance-movie-bot
+  labels:
+    app.kubernetes.io/name: chance-movie-bot
+    app.kubernetes.io/component: bot
+    app.kubernetes.io/version: "latest"
+spec:
+  # Telegram polling bot: only 1 replica allowed.
+  # Multiple instances would race for the same updates.
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chance-movie-bot
+
+  strategy:
+    # Terminate the old pod before starting the new one —
+    # prevents two instances polling simultaneously.
+    type: Recreate
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chance-movie-bot
+        app.kubernetes.io/component: bot
+    spec:
+      # ── Security hardening ──────────────────────────────────
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001        # botuser (matches Dockerfile)
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Pull from GHCR (public image, no imagePullSecrets needed)
+      containers:
+        - name: bot
+          image: ghcr.io/demjanok/chance_movie_bot:latest
+          imagePullPolicy: Always
+
+          # ── Container-level security ────────────────────────
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          # ── Non-sensitive config from ConfigMap ─────────────
+          envFrom:
+            - configMapRef:
+                name: chance-movie-bot-config
+
+          # ── Sensitive credentials from Secret ───────────────
+          env:
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: chance-movie-bot-secrets
+                  key: TELEGRAM_BOT_TOKEN
+            - name: TMDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: chance-movie-bot-secrets
+                  key: TMDB_API_KEY
+            # Python I/O (ensure JSON logs flush immediately)
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: PYTHONIOENCODING
+              value: "UTF-8"
+
+          # ── Resource limits ─────────────────────────────────
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+          # ── Liveness probe ──────────────────────────────────
+          # No HTTP port → use exec probe to verify Python is alive.
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import sys; sys.exit(0)"
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          # ── Startup probe ───────────────────────────────────
+          # Gives the bot up to 60s to connect to Telegram on startup
+          # before liveness kicks in.
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import sys; sys.exit(0)"
+            failureThreshold: 12
+            periodSeconds: 5
+
+          # ── Writable tmp for Python/httpx temp files ────────
+          # readOnlyRootFilesystem=true requires explicit writable mounts.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+      # ── Graceful shutdown ───────────────────────────────────
+      # Give the bot 30s to finish in-flight requests before SIGKILL.
+      terminationGracePeriodSeconds: 30
+
+      # ── Restart policy ──────────────────────────────────────
+      restartPolicy: Always
+

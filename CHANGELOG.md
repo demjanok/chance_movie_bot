@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.8] — 2026-10-25
+
+### Added
+- **Kubernetes manifests** (`k8s/`) — production-ready deployment for MicroK8s and any standard k8s cluster.
+  - **`namespace.yaml`** — isolated `chance-movie-bot` namespace.
+  - **`secret.yaml`** — `TELEGRAM_BOT_TOKEN` and `TMDB_API_KEY` stored as a k8s `Secret` (`stringData`); credentials are never baked into the image or ConfigMap.
+  - **`configmap.yaml`** — all non-sensitive runtime variables (`MIN_RATING`, `LOG_FORMAT`, etc.) as a `ConfigMap`.
+  - **`deployment.yaml`** — single-replica `Deployment` with:
+    - `strategy: Recreate` — prevents two bot instances polling Telegram simultaneously (race condition guard).
+    - `securityContext`: non-root user (UID 1001), `readOnlyRootFilesystem: true`, `allowPrivilegeEscalation: false`, all Linux capabilities dropped (`drop: [ALL]`), `seccompProfile: RuntimeDefault`.
+    - `livenessProbe` + `startupProbe` via exec (no HTTP port needed).
+    - `readOnlyRootFilesystem` + `/tmp` `emptyDir` volume for Python/httpx temp files.
+    - Resource requests/limits: 50m–500m CPU, 64Mi–256Mi RAM.
+    - `terminationGracePeriodSeconds: 30` for graceful shutdown.
+  - **`kustomization.yaml`** — `kustomize` entrypoint; apply everything with one command.
+
+---
+
 ## [1.7] — 2026-10-25
 
 ### Added
