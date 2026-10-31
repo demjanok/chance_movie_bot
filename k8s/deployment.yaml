@@ -36,7 +36,16 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 
-      # Pull from GHCR (public image, no imagePullSecrets needed)
+      # Package is PUBLIC on ghcr.io — no imagePullSecrets needed.
+      # If you ever make it private again, uncomment the block below and create:
+      #   microk8s kubectl create secret docker-registry ghcr-pull-secret \
+      #     --namespace=chance-movie-bot \
+      #     --docker-server=ghcr.io \
+      #     --docker-username=demjanok \
+      #     --docker-password=YOUR_GITHUB_PAT
+      # imagePullSecrets:
+      #   - name: ghcr-pull-secret
+
       containers:
         - name: bot
           image: ghcr.io/demjanok/chance_movie_bot:latest
